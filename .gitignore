@@ -1,0 +1,24 @@
+# Environment and secrets
+.env
+*.env
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Virtual environments
+de-env/
+venv/
+ENV/
+
+# Data and log artifacts
+data/*.json
+data/*.csv
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db
