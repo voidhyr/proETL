@@ -22,3 +22,7 @@ data/*.csv
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Airflow runtime metadata and logs
+airflow/
+*.airflow*
