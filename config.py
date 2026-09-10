@@ -3,6 +3,7 @@ import sys
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy import text
 
 # 1. Load environment variables from .env
 load_dotenv()
@@ -53,6 +54,24 @@ def test_db_connection() -> bool:
         print(f"Details: {e}", file=sys.stderr)
         return False
 
+
+def init_dq_log_table() -> None:
+    """Creates the data_quality_log table in PostgreSQL if it does not exist."""
+    ddl = """
+    CREATE TABLE IF NOT EXISTS data_quality_log (
+        log_id BIGSERIAL PRIMARY KEY,
+        pipeline_run_id VARCHAR(100),
+        city_name VARCHAR(100),
+        rule_failed VARCHAR(100) NOT NULL,
+        invalid_value TEXT,
+        failure_reason TEXT,
+        logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    engine = get_db_engine()
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
+    print("[SUCCESS] Verified data_quality_log table in PostgreSQL.")
 
 if __name__ == "__main__":
     success = test_db_connection()
