@@ -1,10 +1,11 @@
 import sys
 import logging
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 import requests
 from config import OPENWEATHER_API_KEY, OPENWEATHER_BASE_URL
 
-# Set up logging for ingestion tracking
+# Configure standardized logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
@@ -32,7 +33,7 @@ def build_weather_url(city_query: str, api_key: str = OPENWEATHER_API_KEY) -> st
     return f"{OPENWEATHER_BASE_URL}?q={city_query}&appid={api_key}&units=metric"
 
 
-def fetch_city_weather(city_query: str, timeout_seconds: int = 10) -> Optional[Dict]:
+def fetch_city_weather(city_query: str, timeout_seconds: int = 10) -> Optional[Dict[str, Any]]:
     """
     Fetches raw weather observation data for a single city from OpenWeatherMap API.
     Handles HTTP response statuses and connection timeouts gracefully.
@@ -43,7 +44,7 @@ def fetch_city_weather(city_query: str, timeout_seconds: int = 10) -> Optional[D
         status_code = response.status_code
 
         if status_code == 200:
-            logging.info(f"Successfully fetched data for: {city_query}")
+            logging.info(f"Successfully fetched raw data for: {city_query}")
             return response.json()
         elif status_code == 401:
             logging.error(f"401 Unauthorized for {city_query}. Check your OPENWEATHER_API_KEY.")
@@ -69,33 +70,78 @@ def fetch_city_weather(city_query: str, timeout_seconds: int = 10) -> Optional[D
         return None
 
 
-def extract_all_weather(cities: List[str] = TARGET_CITIES) -> List[Dict]:
+def flatten_weather_record(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Iterates over target cities and extracts raw weather payloads into an in-memory list.
+    Flattens and extracts relevant fields from the raw nested OpenWeatherMap JSON payload.
+    Produces a standardized dictionary structure for validation and transformation.
     """
-    extracted_records: List[Dict] = []
-    logging.info(f"Starting weather extraction for {len(cities)} cities...")
+    coord = raw_payload.get("coord", {})
+    main = raw_payload.get("main", {})
+    wind = raw_payload.get("wind", {})
+    sys_data = raw_payload.get("sys", {})
+
+    # Convert observation epoch timestamp to ISO UTC string and date integer
+    epoch_ts = raw_payload.get("dt")
+    if epoch_ts:
+        dt_obj = datetime.fromtimestamp(epoch_ts, tz=timezone.utc)
+        observed_at = dt_obj.isoformat()
+        date_id = int(dt_obj.strftime("%Y%m%d"))
+    else:
+        observed_at = None
+        date_id = None
+
+    return {
+        "city_name": raw_payload.get("name"),
+        "country": sys_data.get("country"),
+        "latitude": coord.get("lat"),
+        "longitude": coord.get("lon"),
+        "date_id": date_id,
+        "observed_at": observed_at,
+        "temperature": main.get("temp"),
+        "feels_like": main.get("feels_like"),
+        "temp_min": main.get("temp_min"),
+        "temp_max": main.get("temp_max"),
+        "pressure": main.get("pressure"),
+        "humidity": main.get("humidity"),
+        "wind_speed": wind.get("speed"),
+        "wind_deg": wind.get("deg")
+    }
+
+
+def extract_all_weather(cities: List[str] = TARGET_CITIES) -> List[Dict[str, Any]]:
+    """
+    Orchestrates extraction and flattening across all target cities.
+    Returns a clean list of standardized dictionaries.
+    """
+    flattened_records: List[Dict[str, Any]] = []
+    logging.info(f"Starting weather extraction pipeline for {len(cities)} cities...")
 
     for city in cities:
-        payload = fetch_city_weather(city)
-        if payload:
-            extracted_records.append(payload)
+        raw_payload = fetch_city_weather(city)
+        if raw_payload:
+            flattened = flatten_weather_record(raw_payload)
+            flattened_records.append(flattened)
 
-    logging.info(f"Extraction finished. Retrieved {len(extracted_records)}/{len(cities)} records successfully.")
-    return extracted_records
+    logging.info(
+        f"Extraction pipeline completed. Processed {len(flattened_records)}/{len(cities)} cities."
+    )
+    return flattened_records
 
 
 if __name__ == "__main__":
     records = extract_all_weather()
     if not records:
-        logging.error("Extraction returned 0 records. Check network connection and API key.")
+        logging.error("Extraction failed: 0 records extracted.")
         sys.exit(1)
 
-    print("\n--- Extraction Sample Output ---")
-    first_record = records[0]
-    print(f"City: {first_record.get('name')}")
-    print(f"Coordinates: {first_record.get('coord')}")
-    print(f"Main Weather: {first_record.get('main')}")
-    print(f"Wind: {first_record.get('wind')}")
-    print(f"Timestamp (epoch): {first_record.get('dt')}")
-    print("[SUCCESS] Task 2.2 extraction test completed.")
+    print("\n--- Standardized Records Output ---")
+    for rec in records:
+        print(
+            f"[{rec['city_name']}, {rec['country']}] "
+            f"DateID: {rec['date_id']} | "
+            f"Temp: {rec['temperature']}°C | "
+            f"Humidity: {rec['humidity']}% | "
+            f"Pressure: {rec['pressure']} hPa | "
+            f"Wind: {rec['wind_speed']} m/s"
+        )
+    print("\n[SUCCESS] Milestone 2 (API Ingestion) successfully verified.")
