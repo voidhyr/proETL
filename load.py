@@ -27,7 +27,8 @@ def init_warehouse_schema(engine: Engine) -> None:
     ddl_statements = """
     -- 1. City Dimension
     CREATE TABLE IF NOT EXISTS dim_city (
-        city_name VARCHAR(100) PRIMARY KEY,
+    -- From load.py:
+        city_name VARCHAR(100) NOT NULL REFERENCES dim_city(city_name)
         country VARCHAR(10) NOT NULL,
         latitude NUMERIC(8, 5),
         longitude NUMERIC(8, 5)
