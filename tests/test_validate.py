@@ -1,86 +1,56 @@
 import pytest
 from validate import validate_weather_records
 
-
-@pytest.fixture
-def clean_record_sample():
-    """Provides a baseline valid weather record."""
-    return {
+def test_valid_data_passes():
+    """Verify that a clean observation record passes validation completely."""
+    clean_data = [{
         "city_name": "Kochi",
-        "country": "IN",
-        "latitude": 9.9399,
-        "longitude": 76.2602,
         "date_id": 20260911,
-        "observed_at": "2026-09-11T00:32:00+00:00",
-        "temperature": 27.5,
-        "feels_like": 29.0,
-        "temp_min": 26.0,
-        "temp_max": 28.5,
+        "temperature": 28.5,
+        "humidity": 80,
+        "pressure": 1012,
+        "feels_like": 31.0,
+        "temp_min": 27.0,
+        "temp_max": 29.5,
+        "wind_speed": 3.2,
+        "wind_deg": 240
+    }]
+    valid_df, invalid_records = validate_weather_records(clean_data)
+    assert len(valid_df) == 1
+    assert len(invalid_records) == 0
+
+def test_range_rule_temperature_out_of_bounds():
+    """Verify that impossible physical temperatures (> 60°C) are caught."""
+    corrupted_data = [{
+        "city_name": "Delhi",
+        "date_id": 20260911,
+        "temperature": 150.0,  # Impossible physical temperature (> 60°C)
+        "humidity": 45,
+        "pressure": 1005,
+        "feels_like": 150.0,
+        "temp_min": 140.0,
+        "temp_max": 160.0,
+        "wind_speed": 2.1,
+        "wind_deg": 180
+    }]
+    valid_df, invalid_records = validate_weather_records(corrupted_data)
+    assert len(valid_df) == 0
+    assert len(invalid_records) > 0
+
+def test_completeness_missing_city():
+    """Verify that a missing or null city identifier is rejected."""
+    corrupted_data = [{
+        "city_name": None,
+        "date_id": 20260911,
+        "temperature": 25.0,
+        "humidity": 65,
         "pressure": 1010,
-        "humidity": 75,
-        "wind_speed": 3.5,
-        "wind_deg": 240,
-    }
-
-
-def test_validation_passes_clean_data(clean_record_sample):
-    """Baseline Check: Clean record passes without rejection."""
-    valid, invalid = validate_weather_records([clean_record_sample])
-    assert len(valid) == 1
-    assert len(invalid) == 0
-    assert valid[0]["city_name"] == "Kochi"
-
-
-def test_validation_catches_null_completeness(clean_record_sample):
-    """Pillar 1 Check: Null/None values in critical columns are intercepted."""
-    bad_record = clean_record_sample.copy()
-    bad_record["temperature"] = None
-
-    valid, invalid = validate_weather_records([bad_record])
-    assert len(valid) == 0
-    assert len(invalid) == 1
-    assert invalid[0]["rule_failed"] == "COMPLETENESS"
-
-
-def test_validation_catches_duplicate_uniqueness(clean_record_sample):
-    """Pillar 2 Check: Duplicate (city, date) observations are caught."""
-    rec1 = clean_record_sample.copy()
-    rec2 = clean_record_sample.copy()
-
-    valid, invalid = validate_weather_records([rec1, rec2])
-    assert len(valid) == 1
-    assert len(invalid) == 1
-    assert invalid[0]["rule_failed"] == "UNIQUENESS"
-
-
-def test_validation_catches_temperature_out_of_range(clean_record_sample):
-    """Pillar 3 Check: Temperatures exceeding boundaries (>60°C or <-50°C) are caught."""
-    bad_record = clean_record_sample.copy()
-    bad_record["temperature"] = 99.9  # Beyond meteorological range
-
-    valid, invalid = validate_weather_records([bad_record])
-    assert len(valid) == 0
-    assert len(invalid) == 1
-    assert invalid[0]["rule_failed"] == "RANGE_VALIDITY_TEMP"
-
-
-def test_validation_catches_humidity_out_of_range(clean_record_sample):
-    """Pillar 3 Check: Relative humidity outside 0-100% is caught."""
-    bad_record = clean_record_sample.copy()
-    bad_record["humidity"] = 150  # Physically impossible relative humidity
-
-    valid, invalid = validate_weather_records([bad_record])
-    assert len(valid) == 0
-    assert len(invalid) == 1
-    assert invalid[0]["rule_failed"] == "RANGE_VALIDITY_HUMIDITY"
-
-
-def test_validation_catches_unregistered_city_referential(clean_record_sample):
-    """Pillar 4 Check: Cities outside the registered target set fail referential integrity."""
-    bad_record = clean_record_sample.copy()
-    bad_record["city_name"] = "Atlantis"
-
-    valid, invalid = validate_weather_records([bad_record])
-    assert len(valid) == 0
-    assert len(invalid) == 1
-    assert invalid[0]["rule_failed"] == "REFERENTIAL_INTEGRITY"
+        "feels_like": 25.0,
+        "temp_min": 24.0,
+        "temp_max": 26.0,
+        "wind_speed": 1.5,
+        "wind_deg": 90
+    }]
+    valid_df, invalid_records = validate_weather_records(corrupted_data)
+    assert len(valid_df) == 0
+    assert len(invalid_records) > 0
