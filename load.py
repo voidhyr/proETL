@@ -1,4 +1,3 @@
-cat << 'EOF' > ~/Projects/proETL/load.py
 import logging
 from sqlalchemy import text
 import pandas as pd
@@ -6,7 +5,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 def init_warehouse_schema(engine):
-    """Initializes dim_city, dim_date, and fact_weather tables with valid relational constraints."""
+    """Initializes dim_city, dim_date, and fact_weather tables with valid constraints."""
     ddl = """
     CREATE TABLE IF NOT EXISTS dim_city (
         city_id SERIAL PRIMARY KEY,
@@ -72,15 +71,20 @@ def load_dimensions(df_dim_city: pd.DataFrame, df_dim_date: pd.DataFrame, engine
     logger.info("Dimensions successfully loaded.")
 
 def load_facts(df_fact_weather: pd.DataFrame, engine):
-    """Loads transformed fact records into fact_weather."""
-    with engine.begin() as conn:
-        df_fact_weather.to_sql(
-            "fact_weather",
-            conn,
-            if_exists="append",
-            index=False,
-            method="multi"
+    """Loads transformed fact records using native SQLAlchemy parameter binding."""
+    insert_sql = text("""
+        INSERT INTO fact_weather (
+            city_name, date_id, temperature, feels_like, temp_min,
+            temp_max, pressure, humidity, wind_speed, wind_deg
+        ) VALUES (
+            :city_name, :date_id, :temperature, :feels_like, :temp_min,
+            :temp_max, :pressure, :humidity, :wind_speed, :wind_deg
         )
-    logger.info(f"Loaded {len(df_fact_weather)} facts into fact_weather.")
-    return len(df_fact_weather)
-EOF
+    """)
+
+    records = df_fact_weather.to_dict(orient="records")
+    if records:
+        with engine.begin() as conn:
+            conn.execute(insert_sql, records)
+        logger.info(f"Loaded {len(records)} facts into fact_weather.")
+    return len(records)
