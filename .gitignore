@@ -27,3 +27,4 @@ Thumbs.db
 airflow/
 *.airflow*
 bi_exports/
+secrets/
