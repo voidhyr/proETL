@@ -22,6 +22,12 @@ MAX_HUMIDITY: int = 100
 MIN_PRESSURE: int = 800
 MAX_PRESSURE: int = 1100
 
+# Air pollution index and particulate boundaries
+MIN_AQI: int = 1
+MAX_AQI: int = 5
+MIN_PM25: float = 0.0
+MIN_PM10: float = 0.0
+
 REQUIRED_COLUMNS: List[str] = [
     "city_name",
     "date_id",
@@ -74,7 +80,7 @@ def validate_weather_records(
     Evaluates extracted records across 4 data quality pillars:
       1. Completeness (Null checks)
       2. Uniqueness (Duplicate checks)
-      3. Range Validity (Meteorological physical bounds)
+      3. Range Validity (Meteorological & Air Quality physical bounds)
       4. Referential Integrity (Registered target cities)
     """
     if not records:
@@ -93,6 +99,9 @@ def validate_weather_records(
         temp = record_dict.get("temperature")
         humidity = record_dict.get("humidity")
         pressure = record_dict.get("pressure")
+        aqi = record_dict.get("aqi")
+        pm2_5 = record_dict.get("pm2_5")
+        pm10 = record_dict.get("pm10")
         composite_key = f"{city}_{date_id}"
 
         # 1. Completeness Check
@@ -115,7 +124,7 @@ def validate_weather_records(
             continue
         seen_keys.add(composite_key)
 
-        # 3. Range Validity Checks
+        # 3. Range Validity Checks (Meteorological)
         if not (MIN_TEMPERATURE <= temp <= MAX_TEMPERATURE):
             record_dict["failure_reason"] = f"Temperature {temp}°C outside [{MIN_TEMPERATURE}, {MAX_TEMPERATURE}]"
             record_dict["rule_failed"] = "RANGE_VALIDITY_TEMP"
@@ -134,6 +143,28 @@ def validate_weather_records(
             record_dict["failure_reason"] = f"Pressure {pressure} hPa outside [{MIN_PRESSURE}, {MAX_PRESSURE}]"
             record_dict["rule_failed"] = "RANGE_VALIDITY_PRESSURE"
             record_dict["invalid_value"] = str(pressure)
+            invalid_records.append(record_dict)
+            continue
+
+        # 3b. Range Validity Checks (Air Quality)
+        if aqi is not None and not pd.isna(aqi) and not (MIN_AQI <= int(aqi) <= MAX_AQI):
+            record_dict["failure_reason"] = f"AQI index {aqi} outside [{MIN_AQI}, {MAX_AQI}]"
+            record_dict["rule_failed"] = "RANGE_VALIDITY_AQI"
+            record_dict["invalid_value"] = str(aqi)
+            invalid_records.append(record_dict)
+            continue
+
+        if pm2_5 is not None and not pd.isna(pm2_5) and float(pm2_5) < MIN_PM25:
+            record_dict["failure_reason"] = f"PM2.5 reading {pm2_5} cannot be negative"
+            record_dict["rule_failed"] = "RANGE_VALIDITY_PM25"
+            record_dict["invalid_value"] = str(pm2_5)
+            invalid_records.append(record_dict)
+            continue
+
+        if pm10 is not None and not pd.isna(pm10) and float(pm10) < MIN_PM10:
+            record_dict["failure_reason"] = f"PM10 reading {pm10} cannot be negative"
+            record_dict["rule_failed"] = "RANGE_VALIDITY_PM10"
+            record_dict["invalid_value"] = str(pm10)
             invalid_records.append(record_dict)
             continue
 
@@ -157,29 +188,46 @@ def validate_weather_records(
 
 
 if __name__ == "__main__":
-    print("Running Task 3.2 Validation & Audit Logging Test...")
+    print("Running Validation & Audit Logging Test (Weather + Air Quality)...")
     init_dq_log_table()
 
-    # 1. Fetch real clean data
+    # 1. Fetch real multi-stream data
     real_records = extract_all_weather()
 
-    # 2. Inject synthetic corrupted records to test audit logging
+    # 2. Inject synthetic corrupted records (including Air Quality violations)
     synthetic_bad_records = [
         {
             "city_name": "Kochi",
             "country": "IN",
-            "date_id": 20260911,
-            "temperature": 999.0,  # Range violation
+            "date_id": 20260925,
+            "temperature": 999.0,  # Temperature out of range
             "humidity": 80,
             "pressure": 1010,
+            "aqi": 2,
+            "pm2_5": 10.0,
+            "pm10": 15.0
+        },
+        {
+            "city_name": "Bengaluru",
+            "country": "IN",
+            "date_id": 20260925,
+            "temperature": 25.0,
+            "humidity": 65,
+            "pressure": 1012,
+            "aqi": 9,  # AQI out of bounds (> 5)
+            "pm2_5": -5.0,  # Negative PM2.5
+            "pm10": 20.0
         },
         {
             "city_name": "Atlantis",  # Referential violation
             "country": "XX",
-            "date_id": 20260911,
-            "temperature": 25.0,
+            "date_id": 20260925,
+            "temperature": 22.0,
             "humidity": 50,
             "pressure": 1012,
+            "aqi": 1,
+            "pm2_5": 5.0,
+            "pm10": 10.0
         }
     ]
 
@@ -187,10 +235,10 @@ if __name__ == "__main__":
     valid, invalid = validate_weather_records(test_batch)
 
     # Persist the bad records to PostgreSQL
-    log_invalid_records_to_db(invalid, pipeline_run_id="test_run_task_3_2")
+    log_invalid_records_to_db(invalid, pipeline_run_id="test_run_air_quality_dq")
 
     print("\n--- Final Verification Summary ---")
-    print(f"Total Batch Size Tested: {len(test_batch)}")
-    print(f"Clean Records Passed   : {len(valid)}")
+    print(f"Total Batch Size Tested          : {len(test_batch)}")
+    print(f"Clean Records Passed             : {len(valid)}")
     print(f"Bad Records Caught & Logged to DB: {len(invalid)}")
-    print("[SUCCESS] Task 3.2 database audit logging verified.")
+    print("[SUCCESS] Validation and DB audit logging verified for Weather + Air Pollution.")
