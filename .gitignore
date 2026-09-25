@@ -31,3 +31,7 @@ secrets/
 
 # IDE Configurations
 .idea/
+
+# IDE & Local Documentation Artifacts
+.idea/
+docs/
