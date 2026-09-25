@@ -21,7 +21,7 @@ def transform_weather_data(
     Transforms clean in-memory records into three distinct dimensional DataFrames:
       1. df_dim_city
       2. df_dim_date
-      3. df_fact_weather
+      3. df_fact_weather (including Air Quality metrics: aqi, pm2_5, pm10)
     """
     if not clean_records:
         logging.warning("No clean records provided for transformation.")
@@ -57,7 +57,7 @@ def transform_weather_data(
     # -------------------------------------------------------------
     # 3. Transform Fact: fact_weather
     # -------------------------------------------------------------
-    df_fact_weather = df_raw[[
+    fact_columns = [
         "city_name",
         "date_id",
         "temperature",
@@ -67,16 +67,33 @@ def transform_weather_data(
         "pressure",
         "humidity",
         "wind_speed",
-        "wind_deg"
-    ]].copy()
+        "wind_deg",
+        "aqi",
+        "pm2_5",
+        "pm10"
+    ]
+
+    # Ensure air pollution columns exist even if None
+    for col in ["aqi", "pm2_5", "pm10"]:
+        if col not in df_raw.columns:
+            df_raw[col] = None
+
+    df_fact_weather = df_raw[fact_columns].copy()
 
     # Ensure clean numeric data types
-    numeric_cols = [
+    numeric_float_cols = [
         "temperature", "feels_like", "temp_min", "temp_max",
-        "pressure", "humidity", "wind_speed", "wind_deg"
+        "wind_speed", "pm2_5", "pm10"
     ]
-    for col in numeric_cols:
-        df_fact_weather[col] = pd.to_numeric(df_fact_weather[col], errors="coerce")
+    for col in numeric_float_cols:
+        df_fact_weather[col] = pd.to_numeric(df_fact_weather[col], errors="coerce").round(2)
+
+    numeric_int_cols = ["pressure", "humidity", "wind_deg"]
+    for col in numeric_int_cols:
+        df_fact_weather[col] = pd.to_numeric(df_fact_weather[col], errors="coerce").astype("Int64")
+
+    # Cast AQI cleanly to Nullable Integer
+    df_fact_weather["aqi"] = pd.to_numeric(df_fact_weather["aqi"], errors="coerce").astype("Int64")
 
     logging.info(
         f"Transformation complete: "
@@ -105,7 +122,7 @@ if __name__ == "__main__":
     print("\n[dim_date]:")
     print(dim_date.head())
 
-    print("\n[fact_weather]:")
-    print(fact_weather.head())
+    print("\n[fact_weather (with AQI and PM metrics)]:")
+    print(fact_weather[["city_name", "date_id", "temperature", "aqi", "pm2_5", "pm10"]].head())
 
-    print("\n[SUCCESS] Milestone 4 transformation logic verified.")
+    print("\n[SUCCESS] Milestone 4 transformation logic verified with Air Quality.")
