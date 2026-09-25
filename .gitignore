@@ -28,3 +28,6 @@ airflow/
 *.airflow*
 bi_exports/
 secrets/
+
+# IDE Configurations
+.idea/
