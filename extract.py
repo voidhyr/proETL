@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import requests
 from config import OPENWEATHER_API_KEY, OPENWEATHER_BASE_URL
+from config import OPENWEATHER_AIR_POLLUTION_URL
 
 # Configure standardized logging
 logging.basicConfig(
@@ -111,21 +112,72 @@ def flatten_weather_record(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
 def extract_all_weather(cities: List[str] = TARGET_CITIES) -> List[Dict[str, Any]]:
     """
     Orchestrates extraction and flattening across all target cities.
-    Returns a clean list of standardized dictionaries.
+    Fetches weather data and uses its coordinates to fetch air pollution metrics.
     """
     flattened_records: List[Dict[str, Any]] = []
-    logging.info(f"Starting weather extraction pipeline for {len(cities)} cities...")
+    logging.info(f"Starting multi-stream extraction (Weather + Pollution) for {len(cities)} cities...")
 
     for city in cities:
-        raw_payload = fetch_city_weather(city)
-        if raw_payload:
-            flattened = flatten_weather_record(raw_payload)
-            flattened_records.append(flattened)
+        raw_weather = fetch_city_weather(city)
+        if not raw_weather:
+            continue
+
+        # Extract coordinates directly from weather response
+        coord = raw_weather.get("coord", {})
+        lat = coord.get("lat")
+        lon = coord.get("lon")
+
+        raw_pollution = None
+        if lat is not None and lon is not None:
+            raw_pollution = fetch_city_air_pollution(lat, lon)
+
+        # Combine weather and pollution into a single standardized record
+        flattened = flatten_weather_and_pollution(raw_weather, raw_pollution)
+        flattened_records.append(flattened)
 
     logging.info(
         f"Extraction pipeline completed. Processed {len(flattened_records)}/{len(cities)} cities."
     )
     return flattened_records
+
+def fetch_city_air_pollution(lat: float, lon: float, timeout_seconds: int = 10) -> Optional[Dict[str, Any]]:
+    """Fetches real-time Air Pollution data for given coordinates."""
+    url = f"{OPENWEATHER_AIR_POLLUTION_URL}?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
+    try:
+        response = requests.get(url, timeout=timeout_seconds)
+        if response.status_code == 200:
+            return response.json()
+        logging.warning(f"Pollution API failed with status: {response.status_code}")
+        return None
+    except requests.exceptions.RequestException as err:
+        logging.error(f"Air Pollution API error: {err}")
+        return None
+
+
+def flatten_weather_and_pollution(raw_weather: Dict[str, Any],
+                                  raw_pollution: Optional[Dict[str, Any]]) -> Dict[
+    str, Any]:
+    # Retain your existing weather flattening logic...
+    record = flatten_weather_record(raw_weather)
+
+    # Extract pollutant concentrations and AQI
+    if raw_pollution and "list" in raw_pollution and len(raw_pollution["list"]) > 0:
+        pollution_item = raw_pollution["list"][0]
+        record["aqi"] = pollution_item.get("main", {}).get(
+            "aqi")  # 1 (Good) to 5 (Very Poor)
+        components = pollution_item.get("components", {})
+        record["pm2_5"] = components.get("pm2_5")
+        record["pm10"] = components.get("pm10")
+        record["co"] = components.get("co")
+        record["no2"] = components.get("no2")
+    else:
+        record["aqi"] = None
+        record["pm2_5"] = None
+        record["pm10"] = None
+        record["co"] = None
+        record["no2"] = None
+
+    return record
 
 
 if __name__ == "__main__":
@@ -134,14 +186,14 @@ if __name__ == "__main__":
         logging.error("Extraction failed: 0 records extracted.")
         sys.exit(1)
 
-    print("\n--- Standardized Records Output ---")
+    print("\n--- Standardized Records Output (Weather + Air Pollution) ---")
     for rec in records:
         print(
             f"[{rec['city_name']}, {rec['country']}] "
             f"DateID: {rec['date_id']} | "
             f"Temp: {rec['temperature']}°C | "
-            f"Humidity: {rec['humidity']}% | "
-            f"Pressure: {rec['pressure']} hPa | "
-            f"Wind: {rec['wind_speed']} m/s"
+            f"AQI: {rec.get('aqi')} | "
+            f"PM2.5: {rec.get('pm2_5')} µg/m³ | "
+            f"PM10: {rec.get('pm10')} µg/m³"
         )
-    print("\n[SUCCESS] Milestone 2 (API Ingestion) successfully verified.")
+    print("\n[SUCCESS] Multi-stream ingestion (Weather + Pollution) successfully verified.")
