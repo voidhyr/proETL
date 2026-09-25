@@ -4,6 +4,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
 def init_warehouse_schema(engine):
     """Initializes dim_city, dim_date, and fact_weather tables with valid constraints."""
     ddl = """
@@ -37,12 +38,16 @@ def init_warehouse_schema(engine):
         humidity INT,
         wind_speed NUMERIC(5, 2),
         wind_deg INT,
+        aqi INT,
+        pm2_5 NUMERIC(6, 2),
+        pm10 NUMERIC(6, 2),
         ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
     with engine.begin() as conn:
         conn.execute(text(ddl))
     logger.info("Warehouse schema initialized successfully.")
+
 
 def load_dimensions(df_dim_city: pd.DataFrame, df_dim_date: pd.DataFrame, engine):
     """Idempotently loads dimension records into PostgreSQL."""
@@ -70,19 +75,25 @@ def load_dimensions(df_dim_city: pd.DataFrame, df_dim_date: pd.DataFrame, engine
             )
     logger.info("Dimensions successfully loaded.")
 
+
 def load_facts(df_fact_weather: pd.DataFrame, engine):
     """Loads transformed fact records using native SQLAlchemy parameter binding."""
     insert_sql = text("""
         INSERT INTO fact_weather (
             city_name, date_id, temperature, feels_like, temp_min,
-            temp_max, pressure, humidity, wind_speed, wind_deg
+            temp_max, pressure, humidity, wind_speed, wind_deg,
+            aqi, pm2_5, pm10
         ) VALUES (
             :city_name, :date_id, :temperature, :feels_like, :temp_min,
-            :temp_max, :pressure, :humidity, :wind_speed, :wind_deg
+            :temp_max, :pressure, :humidity, :wind_speed, :wind_deg,
+            :aqi, :pm2_5, :pm10
         )
     """)
 
-    records = df_fact_weather.to_dict(orient="records")
+    # Replace pandas NA / NaN with None so PostgreSQL receives proper SQL NULLs
+    df_clean = df_fact_weather.where(pd.notnull(df_fact_weather), None)
+    records = df_clean.to_dict(orient="records")
+
     if records:
         with engine.begin() as conn:
             conn.execute(insert_sql, records)
