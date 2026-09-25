@@ -1,7 +1,7 @@
--- Milestone 8: Analytical & Data Quality Views for Looker Studio
+DROP VIEW IF EXISTS vw_weather_analytics;
 
-CREATE OR REPLACE VIEW vw_weather_analytics AS
-SELECT 
+CREATE VIEW vw_weather_analytics AS
+SELECT
     c.city_name,
     c.country,
     c.latitude,
@@ -17,13 +17,16 @@ SELECT
     f.humidity,
     f.wind_speed,
     f.wind_deg,
+    f.aqi,
+    f.pm2_5,
+    f.pm10,
     f.ingested_at
 FROM fact_weather f
 INNER JOIN dim_city c ON f.city_name = c.city_name
 INNER JOIN dim_date d ON f.date_id = d.date_id;
 
 CREATE OR REPLACE VIEW vw_dq_summary AS
-SELECT 
+SELECT
     DATE(logged_at) AS log_date,
     rule_failed,
     COUNT(*) AS total_violations
